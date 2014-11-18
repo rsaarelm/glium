@@ -176,6 +176,7 @@ target.finish();
 
 */
 
+#![feature(associated_types)]
 #![feature(globs)]
 #![feature(if_let)]
 #![feature(phase)]
@@ -964,8 +965,8 @@ impl Display {
     /// let pixels: Vec<Vec<(u8, u8, u8)>> = display.read_front_buffer();
     /// # }
     /// ```
-    pub fn read_front_buffer<P, T>(&self) -> T          // TODO: remove Clone for P
-        where P: texture::PixelValue + Clone + Send, T: texture::Texture2dData<P>
+    pub fn read_front_buffer<T>(&self) -> T          // TODO: remove Clone for P
+        where T: texture::Texture2dData, <T as texture::Texture2dData>::Pixel: Clone + Send
     {
         let dimensions = self.get_framebuffer_dimensions();
         let pixels_count = dimensions.0 * dimensions.1;
