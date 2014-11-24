@@ -8,6 +8,7 @@ use GliumCreationError;
 enum Message {
     EndFrame,
     Execute(proc(CommandContext):Send),
+    Rebuild(glutin::WindowBuilder<'static>, Sender<Result<(), GliumCreationError>>)
 }
 
 pub struct Context {
@@ -203,9 +204,7 @@ pub struct Capabilities {
 }
 
 impl Context {
-    pub fn new_from_window(window: glutin::WindowBuilder, previous: Option<Context>)
-        -> Result<Context, GliumCreationError>
-    {
+    pub fn new_from_window(window: glutin::WindowBuilder) -> Result<Context, GliumCreationError> {
         let (tx_events, rx_events) = channel();
         let (tx_commands, rx_commands) = channel();
 
@@ -220,6 +219,7 @@ impl Context {
         let window = try!(window.build());
 
         spawn(proc() {
+            let mut window = window;
             unsafe { window.make_current(); }
 
             let gl = gl::Gl::load_with(|symbol| window.get_proc_address(symbol));
@@ -253,6 +253,25 @@ impl Context {
                             gl:&gl, state: &mut gl_state, version: &version, extensions: &extensions,
                             opengl_es: opengl_es, capabilities: &capabilities,
                         }),
+                        Ok(Message::Rebuild(builder, notification)) => {
+                            let win_tmp = {
+                                let builder = builder.with_shared_lists(&window);
+                                match builder.build() {
+                                    Ok(win) => {
+                                        notification.send_opt(Ok(())).ok();
+                                        win
+                                    },
+                                    Err(e) => {
+                                        let e = ::std::error::FromError::from_error(e);
+                                        notification.send_opt(Err(e)).ok();
+                                        continue;
+                                    }
+                                }
+                            };
+
+                            window = win_tmp;
+                            unsafe { window.make_current(); }
+                        },
                         Err(_) => break 'main
                     }
                 }
@@ -338,6 +357,9 @@ impl Context {
                         opengl_es: opengl_es, capabilities: &capabilities,
                     }),
                     Ok(Message::EndFrame) => (),     // ignoring buffer swapping
+                    Ok(Message::Rebuild(_, _)) => {
+                        unimplemented!()
+                    },
                     Err(_) => break
                 }
             }
@@ -373,6 +395,14 @@ impl Context {
             }
         }
         result
+    }
+
+    pub fn rebuild(&self, builder: glutin::WindowBuilder<'static>)
+        -> Result<(), GliumCreationError> 
+    {
+        let (tx, rx) = channel();
+        self.commands.lock().send(Message::Rebuild(builder, tx));
+        rx.recv()
     }
 }
 

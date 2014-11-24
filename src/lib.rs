@@ -656,6 +656,9 @@ pub struct IndicesSourceHelper(proc(&mut context::CommandContext): Send);
 pub trait DisplayBuild {
     /// Build a context and a `Display` to draw on it.
     fn build_glium(self) -> Result<Display, GliumCreationError>;
+
+    /// Changes the settings of an existing `Display`.
+    fn rebuild_glium(self, &Display) -> Result<(), GliumCreationError>;
 }
 
 /// Error that can happen while creating a glium display.
@@ -685,9 +688,9 @@ impl std::error::FromError<glutin::CreationError> for GliumCreationError {
     }
 }
 
-impl<'a> DisplayBuild for glutin::WindowBuilder<'a> {
+impl DisplayBuild for glutin::WindowBuilder<'static> {
     fn build_glium(self) -> Result<Display, GliumCreationError> {
-        let context = try!(context::Context::new_from_window(self, None));
+        let context = try!(context::Context::new_from_window(self));
 
         Ok(Display {
             context: Arc::new(DisplayImpl {
@@ -697,6 +700,20 @@ impl<'a> DisplayBuild for glutin::WindowBuilder<'a> {
                 vertex_array_objects: Mutex::new(HashMap::new()),
             }),
         })
+    }
+
+    fn rebuild_glium(self, display: &Display) -> Result<(), GliumCreationError> {
+        {
+            let mut fbos = display.context.framebuffer_objects.lock();
+            fbos.clear();
+        }
+
+        {
+            let mut vaos = display.context.vertex_array_objects.lock();
+            vaos.clear();
+        }
+        
+        display.context.context.rebuild(self)
     }
 }
 
@@ -712,6 +729,10 @@ impl DisplayBuild for glutin::HeadlessRendererBuilder {
                 vertex_array_objects: Mutex::new(HashMap::new()),
             }),
         })
+    }
+
+    fn rebuild_glium(self, display: &Display) -> Result<(), GliumCreationError> {
+        unimplemented!()
     }
 }
 
